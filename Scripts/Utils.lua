@@ -3,7 +3,7 @@ local UEHelpers = require("UEHelpers")
 -- Info Variables
 local version = 2
 local authors = {"MianK"}
-local origin  = "PseudoregaliaSavestates"
+local origin  = "PseudoregaliaHealth"
 -- Local Variables
 local hooks = {}
 local activeKeybinds = {}
@@ -22,52 +22,58 @@ function PseudoregaliaUtils.hasAuthor(auth --[[string]]) return authors.Contains
 function PseudoregaliaUtils.isOrigin(orig --[[string]]) return origin == orig end ---@return boolean
 
 -- Hook Functions
+
+---@param silent bool -- default = false
 ---@return AMainPlayerController_C?
-function PseudoregaliaUtils.hook_PlayerController()
+function PseudoregaliaUtils.hook_PlayerController(silent --[[bool]])
     if hooks["PlayerController"] == nil or not hooks["PlayerController"]:IsValid() then
         hooks["PlayerController"] = FindFirstOf("MainPlayerController_C")
     end
     if hooks["PlayerController"] == nil or not hooks["PlayerController"]:IsValid() then
-        print("PlayerController not found\n")
+        if silent == nil or silent == false then print("PlayerController not found\n") end
         return nil
     end
     return hooks["PlayerController"]
 end
+---@param silent bool -- default = false
 ---@return UMV_GameInstance_C?
-function PseudoregaliaUtils.hook_GameInstance()
+function PseudoregaliaUtils.hook_GameInstance(silent --[[bool]])
     if hooks["GameInstance"] == nil or not hooks["GameInstance"]:IsValid() then
         hooks["GameInstance"] = FindFirstOf("MV_GameInstance_C")
     end
     if hooks["GameInstance"] == nil or not hooks["GameInstance"]:IsValid() then
-        print("GameInstance not found\n")
+	    if silent == nil or silent == false then print("GameInstance not found\n") end
         return nil
     end
     return hooks["GameInstance"]
 end
+---@param silent bool -- default = false
 ---@return UKismetSystemLibrary?
-function PseudoregaliaUtils.hook_KismetSystemLibrary()
+function PseudoregaliaUtils.hook_KismetSystemLibrary(silent --[[bool]])
     if hooks["KismetSystemLibrary"] == nil or not hooks["KismetSystemLibrary"]:IsValid() then
         hooks["KismetSystemLibrary"] = UEHelpers.GetKismetSystemLibrary()
     end
     if hooks["KismetSystemLibrary"] == nil or not hooks["KismetSystemLibrary"]:IsValid() then
-        print("KismetSystemLibrary not found\n")
+	    if silent == nil or silent == false then print("KismetSystemLibrary not found\n") end
         return nil
     end
     return hooks["KismetSystemLibrary"]
 end
+---@param silent bool -- default = false
 ---@return UKismetMathLibrary?
-function PseudoregaliaUtils.hook_KismetMathLibrary()
+function PseudoregaliaUtils.hook_KismetMathLibrary(silent --[[bool]])
     if hooks["KismetMathLibrary"] == nil or not hooks["KismetMathLibrary"]:IsValid() then
         hooks["KismetMathLibrary"] = UEHelpers.GetKismetMathLibrary()
     end
     if hooks["KismetMathLibrary"] == nil or not hooks["KismetMathLibrary"]:IsValid() then
-        print("KismetMathLibrary not found\n")
+	    if silent == nil or silent == false then print("KismetMathLibrary not found\n") end
         return nil
     end
     return hooks["KismetMathLibrary"]
 end
+---@param silent bool -- default = false
 ---@return UKismetInputLibrary?
-function PseudoregaliaUtils.hook_KismetInputLibrary()
+function PseudoregaliaUtils.hook_KismetInputLibrary(silent --[[bool]])
     if hooks["KismetInputLibrary"] == nil or not hooks["KismetInputLibrary"]:IsValid() then
         hooks["KismetInputLibrary"] = FindFirstOf("KismetInputLibrary")
     end
@@ -75,7 +81,7 @@ function PseudoregaliaUtils.hook_KismetInputLibrary()
         hooks["KismetInputLibrary"] = StaticConstructObject(StaticFindObject("/Script/Engine.KismetInputLibrary"), UEHelpers.GetWorld(), FName("KismetInputLibrary"))
     end
     if hooks["KismetInputLibrary"] == nil or not hooks["KismetInputLibrary"]:IsValid() then
-        print("KismetInputLibrary not found\n")
+	    if silent == nil or silent == false then print("KismetInputLibrary not found\n") end
         return nil
     end
     return hooks["KismetInputLibrary"]
@@ -86,7 +92,7 @@ end
 ---@param Y number
 ---@return FVector2D?
 function PseudoregaliaUtils.FVector2D(X, Y)
-    local MathLib = PseudoregaliaUtils.hook_KismetMathLibrary()
+    local MathLib = PseudoregaliaUtils.hook_KismetMathLibrary(true)
     if MathLib == nil then
         print("KismetMathLibrary not found\n")
         return nil
@@ -189,7 +195,6 @@ LoopAsync(100, function ()
             end
         end
     end
-    return false
 end)
+return PseudoregaliaUtils
 
-return PseudoregaliaUtils  
