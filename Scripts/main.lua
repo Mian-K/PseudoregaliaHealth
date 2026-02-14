@@ -3,10 +3,6 @@
 --- Reset Total Health Hotkey:
 local hotKey = Key.F2
 local modifierKeys = {} -- Valid: { SHIFT, CONTROL, ALT }, comma seperated
---- SaveFile
-local enemySaveFile = "UE4SS/Mods/PseudoregaliaHealth/Saves/Enemies.txt"
-
-
 
 --Namespaces
 local UEHelpers = require("UEHelpers")
@@ -27,6 +23,9 @@ local ENEMY_NAMES = {
 	{ class = "BP_hazemy_WheelCrawler_C", name = "Wheel" }
 }
 
+-- SaveFile
+local enemySaveFile = string.match((debug.getinfo(1, "S").source:sub(2)), "Win64\\(.-)Scripts") .. "\\Saves\\Enemies.txt"
+
 --Variables
 local lastHP = 0
 local damageTimestamps = {}
@@ -40,6 +39,7 @@ local enemyIndex = 1
 local menuIndex = 1
 local menuOption = 1
 local menuVariant = 1
+local saveVariantAll = true
 local infiniteHP = {}
 local currentArea = ""
 
@@ -47,13 +47,11 @@ local currentArea = ""
 local playerHealthWidget = nil
 local enemyHealthWidget = nil
 
-Utils.RegisterKey("Reset Total", function() doReset = true; totalDamage = 0.0 end, hotKey, modifierKeys)
-Utils.RegisterKey("Menu Up", function() menuUp() end, Key.UP_ARROW,{})
-Utils.RegisterKey("Menu Down", function() menuDown() end, Key.DOWN_ARROW,{})
-Utils.RegisterKey("Menu Left", function() menuLeft() end, Key.LEFT_ARROW,{})
-Utils.RegisterKey("Menu Right", function() menuRight() end, Key.RIGHT_ARROW,{})
-Utils.RegisterKey("Menu Back", function() menuBack() end, Key.BACKSPACE,{})
-Utils.RegisterKey("Menu Enter", function() menuEnter() end, Key.RETURN,{})
+
+function isOption(option, isTrue, isFalse)
+	if option then return isTrue end
+	return isFalse
+end
 
 function menuDown()
 	if menuVariant == 1 then menuIndex = menuIndex % 5 + 1 end
@@ -72,8 +70,7 @@ end
 function menuBack()
 	if menuVariant == 1 then
 		focusedEnemies[currentArea][menuIndex] = { name = nil, index = nil }
-	end
-	if menuVariant == 2 then menuVariant = 1 end
+	else menuVariant = 1 end
 end
 function menuEnter()
 	if menuVariant == 1 then
@@ -83,18 +80,20 @@ function menuEnter()
 				infiniteHP[enemy] = not infiniteHP[enemy]
 			end
 		end
-		if menuOption == 2 then SaveEnemyTargetsToFile(false) end
-		if menuOption == 3 then LoadEnemyTargetsFromFile(false) end
-		if menuOption == 4 then SaveEnemyTargetsToFile(true) end
-		if menuOption == 5 then LoadEnemyTargetsFromFile(true) end
-		if menuOption == 6 then
+		if menuOption == 2 then
 			enemyIndex = focusedEnemies[currentArea][menuIndex].index or 1
 			menuVariant = 2
 		end
+		if menuOption == 3 then saveVariantAll = not saveVariantAll end
+		if menuOption == 4 then SaveEnemyTargetsToFile(saveVariantAll) end
+		if menuOption == 5 then LoadEnemyTargetsFromFile(saveVariantAll) end
+		if menuOption == 6 then menuVariant = 3 end
 	elseif menuVariant == 2 then
 		if #areaEnemies >= enemyIndex then
 			focusedEnemies[currentArea][menuIndex] = { name = areaEnemies[enemyIndex].name, index = enemyIndex}
 		end
+		menuVariant = 1
+	elseif menuVariant == 3 then
 		menuVariant = 1
 	end
 end
@@ -104,7 +103,7 @@ function LoadEnemyTargetsFromFile(full)
 	if full == nil then full = true end
 	local File = io.open(enemySaveFile, "r")
 	if File == nil then
-		print("Nil")
+		print("Nil File: " .. enemySaveFile)
 	else
 		for line in File:lines() do
 			local area = string.match(line, "Area=([A-Za-z0-9_]+)")
@@ -268,6 +267,11 @@ LoopAsync(100, function()
 				if PlayerController.Pawn.lockedOn == true then
 					lockonTarget = PlayerController.Pawn.LocketActorTarget:GetFName():ToString()
 				end
+				if focusedEnemies[currentArea] ~= nil then
+					for _,focus in ipairs(focusedEnemies[currentArea]) do
+						focus.index = nil
+					end
+				end
 				for _,class in ipairs(ENEMY_NAMES) do
 					for _,enemy in ipairs(enemyListByClass[class.name]) do
 						areaEnemies[#areaEnemies + 1] = enemy
@@ -414,27 +418,16 @@ LoopAsync(100, function()
 						end
 						enemyText = enemyText .. " =========================================\n"
 					end
-					if menuOption == 1 then enemyText = enemyText .. "{ >" else enemyText = enemyText .. "{   " end
 					optionInfinite = "[  ]"
 					if focusedEnemies[currentArea][menuIndex].name ~= nil then
 						if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then optionInfinite = "[x]" end
 					end
-					enemyText = enemyText .. optionInfinite .. "Invincible"
-					if menuOption <= 3 then 
-						enemyText = enemyText .. " | Area:"
-						if menuOption == 2 then enemyText = enemyText .. ">" else enemyText = enemyText .. "  " end
-						enemyText = enemyText .. "Save "
-						if menuOption == 3 then enemyText = enemyText .. ">" else enemyText = enemyText .. "  " end
-						enemyText = enemyText .. "Load [->]| "
-					else
-						enemyText = enemyText .. " |[<-] Total:"
-						if menuOption == 4 then enemyText = enemyText .. ">" else enemyText = enemyText .. "  " end
-						enemyText = enemyText .. "Save "
-						if menuOption == 5 then enemyText = enemyText .. ">" else enemyText = enemyText .. "  " end
-						enemyText = enemyText .. "Load | "
-					end
-					if menuOption == 6 then enemyText = enemyText .. ">" else enemyText = enemyText .. "  " end
-					enemyText = enemyText .. "Enemy Select... }"
+					enemyText = enemyText .. "{ " .. isOption(menuOption == 1, ">","  ") .. optionInfinite .. "∞HP | "
+					enemyText = enemyText .. isOption(menuOption == 2, ">","  ") .. "Enemy List... | "
+					enemyText = enemyText .. isOption(menuOption == 3, ">","  ") .. isOption(saveVariantAll, "[Total]","[Area]")
+					enemyText = enemyText .. isOption(menuOption == 4, ">","  ") .. "Save "
+					enemyText = enemyText .. isOption(menuOption == 5, ">","  ") .. "Load | "
+					enemyText = enemyText .. isOption(menuOption == 6, ">","  ") .. "Hide }"
 				elseif menuVariant == 2 then
 					enemyIndex = (enemyIndex + #areaEnemies - 1) % #areaEnemies + 1
 					local min = enemyIndex - 2
@@ -448,19 +441,39 @@ LoopAsync(100, function()
 					local lineIndex = 1
 					for name,enemy in pairs(areaEnemies) do
 						tableIndex = tableIndex + 1
-						if tableIndex < min then goto continue end
-						local line = "  "
-						if tableIndex == enemyIndex then line = ">" end 
-						enemyText = enemyText .. line .. enemy.class .. " - " .. enemy.count .. "\n"
-						lineIndex = lineIndex + 1
-						if lineIndex > 5 then break end
-						::continue::
+						if tableIndex >= min then
+							local line = "  "
+							if tableIndex == enemyIndex then line = ">" end 
+							enemyText = enemyText .. line .. enemy.class .. " - " .. enemy.count .. "\n"
+							lineIndex = lineIndex + 1
+							if lineIndex > 5 then break end
+						end
 					end
 					while lineIndex <= 5 do
 						lineIndex = lineIndex + 1
 						enemyText = enemyText .. "\n"
 					end
 					enemyText = enemyText .. " =========================================\nEnter > Confirm | Backspace > Cancel | Lockon > Select"
+				elseif menuVariant == 3 then
+					enemyText = "No Enemy Selected | Enter to open Menu"
+					if focusedEnemies[currentArea][menuIndex].index ~= nil then
+						if areaEnemies[focusedEnemies[currentArea][menuIndex].index] ~= nil then
+							local enemy = areaEnemies[focusedEnemies[currentArea][menuIndex].index]
+							local name = enemy.class .. " - " .. enemy.count
+							local maxHP = enemy.maxHP
+							local currentHP = 0
+							local attack = "None"
+							if enemy.enemy:IsValid() then
+								currentHP = enemy.enemy.BP_HpHitable.CurrentHp
+								attack = enemy.enemy.activeAttackID
+							end
+							if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then
+								currentHP = "∞"
+							end
+							
+							enemyText = name .. ", HP = " .. currentHP .. "/" .. maxHP .. ", Attack = " .. attack
+						end
+					end
 				else
 					enemyText = enemyText .. "\n\n\n\n\n =========================================\nEnter > Confirm | Backspace > Cancel | Lockon > Jump"
 				end
@@ -468,15 +481,27 @@ LoopAsync(100, function()
 				playerHealthWidget.WidgetTree.RootWidget.Slots[1].Content:SetText(FText(playerText))
 				playerHealthWidget.WidgetTree.RootWidget.Background.TintColor.SpecifiedColor = {R=0,G=0,B=0,A=0.4}
 				playerHealthWidget:SetPositionInViewport(Utils.FVector2D(350, 10), false)
-				playerHealthWidget:AddToViewport(99)
+				playerHealthWidget:AddToViewport(0)
 				
 				enemyHealthWidget.WidgetTree.RootWidget.Slots[1].Content:SetText(FText(enemyText))
 				enemyHealthWidget.WidgetTree.RootWidget.Slots[1].Content.Font.Size = 15
 				enemyHealthWidget.WidgetTree.RootWidget.Background.TintColor.SpecifiedColor = {R=0,G=0,B=0,A=0.4}
-				enemyHealthWidget:SetPositionInViewport(Utils.FVector2D(1405, 900), false)
-				enemyHealthWidget:AddToViewport(99)
+				local enemyMenuPlacement = Utils.FVector2D(1405, 900)
+				if menuVariant == 3 then
+					enemyMenuPlacement = Utils.FVector2D(1405, 1050)
+				end
+				enemyHealthWidget:SetPositionInViewport(enemyMenuPlacement, false)
+				enemyHealthWidget:AddToViewport(0)
 			end
 		end
 	end
 end)
 
+
+Utils.RegisterKey("Reset Total", function() doReset = true; totalDamage = 0.0 end, hotKey, modifierKeys)
+Utils.RegisterKey("Menu Up", function() menuUp() end, Key.UP_ARROW,{})
+Utils.RegisterKey("Menu Down", function() menuDown() end, Key.DOWN_ARROW,{})
+Utils.RegisterKey("Menu Left", function() menuLeft() end, Key.LEFT_ARROW,{})
+Utils.RegisterKey("Menu Right", function() menuRight() end, Key.RIGHT_ARROW,{})
+Utils.RegisterKey("Menu Back", function() menuBack() end, Key.BACKSPACE,{})
+Utils.RegisterKey("Menu Enter", function() menuEnter() end, Key.RETURN,{})
