@@ -24,7 +24,7 @@ local ENEMY_NAMES = {
 }
 
 -- SaveFile
-local enemySaveFile = string.match((debug.getinfo(1, "S").source:sub(2)), "Win64\\(.-)Scripts") .. "\\Saves\\Enemies.txt"
+local enemySaveFile = (string.match((debug.getinfo(1, "S").source:sub(2)), "Win64\\(.-)Scripts") or "Mods\\PseudoregaliaHealth") .. "\\Saves\\Enemies.txt"
 
 --Variables
 local lastHP = 0
