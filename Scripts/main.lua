@@ -231,13 +231,15 @@ LoopAsync(100, function()
 						if class ~= nil then
 							local name = enemy:GetFName():ToString()
 							local maxHP = enemy.BP_HpHitable.maxHP
-							if infiniteHP[name] == nil then infiniteHP[name] = false end
-							if infiniteHP[name] then
-								enemy.BP_HpHitable.currentHP = MAX_HEALTH
-							elseif enemy.BP_HpHitable.currentHP > maxHP then
-								enemy.BP_HpHitable.currentHP = maxHP
+							if type(maxHP) == "number" then
+								if infiniteHP[name] == nil then infiniteHP[name] = false end
+								if infiniteHP[name] then
+									enemy.BP_HpHitable.currentHP = MAX_HEALTH
+								elseif enemy.BP_HpHitable.currentHP > maxHP then
+									enemy.BP_HpHitable.currentHP = maxHP
+								end
+								enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
 							end
-							enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
 						end
 					end
 				end
@@ -254,13 +256,15 @@ LoopAsync(100, function()
 						if class ~= nil then
 							local name = enemy:GetFName():ToString()
 							local maxHP = enemy.BP_HpHitable.maxHP
-							if infiniteHP[name] == nil then infiniteHP[name] = false end
-							if infiniteHP[name] then
-								enemy.BP_HpHitable.currentHP = MAX_HEALTH
-							elseif enemy.BP_HpHitable.currentHP > maxHP then
-								enemy.BP_HpHitable.currentHP = maxHP
+							if type(maxHP) == "number" then 
+								if infiniteHP[name] == nil then infiniteHP[name] = false end
+								if infiniteHP[name] then
+									enemy.BP_HpHitable.currentHP = MAX_HEALTH
+								elseif enemy.BP_HpHitable.currentHP > maxHP then
+									enemy.BP_HpHitable.currentHP = maxHP
+								end
+								enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
 							end
-							enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
 						end
 					end
 				end
