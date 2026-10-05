@@ -5,22 +5,45 @@ local hotKey = Key.F2
 local modifierKeys = {} -- Valid: { SHIFT, CONTROL, ALT }, comma seperated
 
 --Namespaces
-local UEHelpers = require("UEHelpers")
 local Utils = require("Utils")
 
 --Constants
 local MAX_HEALTH = 1000000000.0
 local MAP_NAME = "mapName_4_423D13C74469858B6E9893BEB6ABFBBB"
+local ENEMY_CLASS  = "/Game/Blueprints/Enemies/BP_EnemyBase.BP_EnemyBase_C"
+local HAZEMY_CLASS = "/Game/Blueprints/Enemies/NoAI_Enemies/BP_Hazemy_Base.BP_Hazemy_Base_C"
+local PLAYERPAWN_CLASS = "/Game/ThirdPerson/Player/BP_PlayerGoatMain.BP_PlayerGoatMain_C"
 local ENEMY_NAMES = {
-	{ class = "BP_Enemy__WalkinEgg_C", name = "Egg" },
-	{ class = "BP_Hazemy_WardHand_C", name = "Hand" },
-	{ class = "BP_Enemy_Maid_C", name = "Maid" },
-	{ class = "BP_PrincessBoss_C", name = "Princess" },
-	{ class = "BP_EnemyJumper_C", name = "Sword" },
-	{ class = "BP_Enemy_Statue_C", name = "Statue" },
-	{ class = "BP_Enemy_Keeper_C", name = "Strong Eyes" },
-	{ class = "BP_Enemy_Horn_C", name = "Trumpet" },
-	{ class = "BP_hazemy_WheelCrawler_C", name = "Wheel" }
+	BP_Enemy__WalkinEgg_C = "Egg",
+	BP_Hazemy_WardHand_C = "Hand",
+	BP_Enemy_Maid_C = "Maid",
+	BP_PrincessBoss_C = "Princess",
+	BP_EnemyJumper_C = "Sword",
+	BP_Enemy_Statue_C = "Statue",
+	BP_Enemy_Keeper_C = "Strong Eyes",
+	BP_Enemy_Horn_C = "Trumpet",
+	BP_hazemy_WheelCrawler_C = "Wheel"
+}
+local ENEMY_CLASS_ORDERED = {
+	"BP_Enemy__WalkinEgg_C",
+	"BP_Hazemy_WardHand_C",
+	"BP_Enemy_Maid_C",
+	"BP_PrincessBoss_C",
+	"BP_EnemyJumper_C",
+	"BP_Enemy_Statue_C",
+	"BP_Enemy_Keeper_C",
+	"BP_Enemy_Horn_C",
+	"BP_hazemy_WheelCrawler_C"
+}
+for key,_ in pairs(ENEMY_NAMES) do
+	print(key)
+end
+local MENU = {
+	ERROR = -1,
+	NO_ENEMY = 0,
+	FOCUSED_ENEMIES = 1,
+	ENEMY_LIST = 2,
+	MINIATURE = 3
 }
 
 -- SaveFile
@@ -38,15 +61,69 @@ local areaEnemies = {}
 local enemyIndex = 1
 local menuIndex = 1
 local menuOption = 1
-local menuVariant = 1
+local menuVariant = MENU.MINIATURE
 local saveVariantAll = true
 local infiniteHP = {}
 local currentArea = ""
+local skip = 0
+
+--Cache
+local enemies = {area={class={name={ref_entity = nil,ref_health = nil,max_hp = 0,current_hp = 0,attack_id = 0,display_name = ""}}}}
+local playerPawn = {ref_entity=nil,ref_health=nil,current_hp=0}
 
 ---@type UUserWidget?
 local playerHealthWidget = nil
 local enemyHealthWidget = nil
 
+function addEntity(refHealth)
+	local refEntity = refHealth:GetOwner()
+	
+	if refEntity:IsA(ENEMY_CLASS) or refEntity:IsA(HAZEMY_CLASS) then
+		local class = refEntity:GetClass():GetFName():ToString() ---@type string
+		if ENEMY_NAMES[class] == nil then return end
+		currentArea = refEntity:GetWorld():GetFName():ToString() ---@type string
+		local name = refEntity:GetFName():ToString() ---@type string
+		if enemies[currentArea] == nil then enemies[currentArea] = {} end
+		if enemies[currentArea][class] == nil then enemies[currentArea][class] = {count = 0} end
+		
+		enemies[currentArea][class][#enemies[currentArea][class] + 1] = {
+			name = name,
+			ref_entity = refEntity,
+			ref_health = refHealth,
+			max_hp = refHealth.maxHP,
+			current_hp = 0,
+			attack_id = 0,
+			display_name = (ENEMY_NAMES[class] or "ERRROROEOORASDOFNMSAD") .. " " .. #enemies[currentArea][class]
+		}
+		print(class .. " : " .. enemies[currentArea][class][#enemies[currentArea][class]].display_name)
+		return
+	elseif refEntity:IsA(PLAYERPAWN_CLASS) then
+		playerPawn = {
+			ref_entity = refEntity,
+			ref_health = refHealth,
+			current_hp = 0
+		}
+	end
+end
+function removeVanillaHealth()
+	for _,Box in ipairs(FindObjects(nil,"HorizontalBox","hpBox") or {}) do
+		Box:ClearChildren()
+	end
+end
+NotifyOnNewObject("/Game/Blueprints/BP_HpHitable.BP_HpHitable_C", addEntity)
+for _,refHealth in ipairs(FindAllOf("BP_HpHitable_C") or {}) do
+	addEntity(refHealth)
+end
+
+_ = RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(Context)
+	currentArea = Context:get():GetWorld():GetFName():ToString()
+	if enemies[currentArea] == nil then return end
+	for _,class in pairs(enemies[currentArea]) do
+		class = {}
+	end
+	removeVanillaHealth()
+end)
+removeVanillaHealth()
 
 function isOption(option, isTrue, isFalse)
 	if option then return isTrue end
@@ -54,29 +131,31 @@ function isOption(option, isTrue, isFalse)
 end
 
 function menuDown()
-	if menuVariant == 1 then menuIndex = menuIndex % 5 + 1 end
-	if menuVariant == 2 then enemyIndex = enemyIndex + 1 end
+	if menuVariant == MENU.FOCUSED_ENEMIES then menuIndex = menuIndex % 5 + 1 end
+	if menuVariant == MENU.ENEMY_LIST then enemyIndex = enemyIndex + 1 end
 end
 function menuUp()
-	if menuVariant == 1 then menuIndex = (menuIndex + 3) % 5 + 1 end
-	if menuVariant == 2 then enemyIndex = enemyIndex - 1 end
+	if menuVariant == MENU.FOCUSED_ENEMIES then menuIndex = (menuIndex + 3) % 5 + 1 end
+	if menuVariant == MENU.ENEMY_LIST then enemyIndex = enemyIndex - 1 end
 end
 function menuLeft()
-	if menuVariant == 1 then menuOption = (menuOption + 4) % 6 + 1 end
+	if menuVariant == MENU.FOCUSED_ENEMIES then menuOption = (menuOption + 4) % 6 + 1 end
 end
 function menuRight()
-	if menuVariant == 1 then menuOption = menuOption % 6 + 1 end
+	if menuVariant == MENU.FOCUSED_ENEMIES then menuOption = menuOption % 6 + 1 end
 end
 function menuBack()
-	if menuVariant == 1 then
+	if menuVariant == MENU.FOCUSED_ENEMIES and focusedEnemies[currentArea] ~= nil then
 		focusedEnemies[currentArea][menuIndex] = { name = nil, index = nil }
-	else menuVariant = 1 end
+	else menuVariant = MENU.FOCUSED_ENEMIES end
 end
 function menuEnter()
-	if menuVariant == 1 then
-		if menuOption == 1 then
+	if menuVariant == MENU.NO_ENEMY then
+		menuVariant = MENU.MINIATURE
+	elseif menuVariant == MENU.FOCUSED_ENEMIES then
+		if menuOption == 1 and focusedEnemies[currentArea] ~= nil then
 			if focusedEnemies[currentArea][menuIndex].name ~= nil then
-				enemy = focusedEnemies[currentArea][menuIndex].name
+				local enemy = focusedEnemies[currentArea][menuIndex].name
 				infiniteHP[enemy] = not infiniteHP[enemy]
 			end
 		end
@@ -88,13 +167,13 @@ function menuEnter()
 		if menuOption == 4 then SaveEnemyTargetsToFile(saveVariantAll) end
 		if menuOption == 5 then LoadEnemyTargetsFromFile(saveVariantAll) end
 		if menuOption == 6 then menuVariant = 3 end
-	elseif menuVariant == 2 then
+	elseif menuVariant == MENU.ENEMY_LIST then
 		if #areaEnemies >= enemyIndex then
 			focusedEnemies[currentArea][menuIndex] = { name = areaEnemies[enemyIndex].name, index = enemyIndex}
 		end
-		menuVariant = 1
-	elseif menuVariant == 3 then
-		menuVariant = 1
+		menuVariant = MENU.FOCUSED_ENEMIES
+	elseif menuVariant == MENU.MINIATURE then
+		menuVariant = MENU.FOCUSED_ENEMIES
 	end
 end
 
@@ -107,31 +186,31 @@ function LoadEnemyTargetsFromFile(full)
 	else
 		for line in File:lines() do
 			local area = string.match(line, "Area=([A-Za-z0-9_]+)")
-			local enemies = {
+			local focus = {
 				string.match(line, "enemy_1=([A-Za-z0-9_]+)"),
 				string.match(line, "enemy_2=([A-Za-z0-9_]+)"),
 				string.match(line, "enemy_3=([A-Za-z0-9_]+)"),
 				string.match(line, "enemy_4=([A-Za-z0-9_]+)"),
 				string.match(line, "enemy_5=([A-Za-z0-9_]+)"),
 			}
-			if (full or area == currentArea) and area ~= nil then  
+			if (full or area == currentArea) and area ~= nil then
 				focusedEnemies[area] = {
-					{name = enemies[1], index = nil},
-					{name = enemies[2], index = nil},
-					{name = enemies[3], index = nil},
-					{name = enemies[4], index = nil},
-					{name = enemies[5], index = nil}
+					{name = focus[1], index = nil},
+					{name = focus[2], index = nil},
+					{name = focus[3], index = nil},
+					{name = focus[4], index = nil},
+					{name = focus[5], index = nil}
 				}
 			end
-		end 
+		end
 		File:close()
 	end
 end
 ---@param full bool -- default = true
 function SaveEnemyTargetsToFile(full)
+	local  saveText = ""
 	if full == nil then full = true end
-	local saveText = ""
-	if not full then 
+	if not full then
 		local oldFile = io.open(enemySaveFile, "r")
 		for line in oldFile:lines() do
 			local area = string.match(line, "Area=([A-Za-z0-9_]+)")
@@ -140,11 +219,11 @@ function SaveEnemyTargetsToFile(full)
 			end
 		end
 	end
-			
-	for area,enemies in pairs(focusedEnemies) do
+	
+	for area,focus in pairs(focusedEnemies) do
 		if full or area == currentArea then
 			saveText = saveText .. "Area=" .. area
-			for i,enemy in ipairs(enemies) do
+			for i,enemy in ipairs(focus) do
 				if enemy.name ~= nil then
 					saveText = saveText .. " :: enemy_".. i .. "=" .. enemy.name
 				end
@@ -161,7 +240,9 @@ end
 -- Pre-load Save File
 LoadEnemyTargetsFromFile()
 
-LoopAsync(100, function()
+--local LoopHandle = LoopInGameThreadAfterFrames(10, function()
+local LoopHandle = LoopInGameThreadWithDelay(100, function()
+--LoopAsync(100, function()
 	for i = 1, 100 do
 		if damageTimestamps[i] ~= nil and os.difftime(os.time(), damageTimestamps[i].timestamp) > 10 then
 			toHeal = toHeal + damageTimestamps[i].damage
@@ -169,138 +250,117 @@ LoopAsync(100, function()
 		end
 	end
 	
-	local PlayerController = Utils.hook_PlayerController(true)
-	local GameInstance = Utils.hook_GameInstance(true)
-	local hpBox = FindObjects(nil,"HorizontalBox","hpBox")
 	local lockonTarget = ""
 	areaEnemies = {}
 	
-	if PlayerController ~= nil and GameInstance ~= nil then
-		local currentHP = PlayerController.Pawn.BP_HPHitable["CurrentHp"]
-		if type(currentHP) == "number" then
-			local recentDamage = 0
-			if currentHP <= MAX_HEALTH / 1000 or doReset then
-				PlayerController.Pawn.BP_HPHitable.CurrentHp = MAX_HEALTH
-				PlayerController.Pawn.BP_HPHitable.maxHP = MAX_HEALTH * 2
-				lastHP = MAX_HEALTH
-				damageTimestamps = {}
-				doReset = false
-				print("Reset to Max HP")
-			else
-				if lastHP > currentHP then
-					totalDamage = totalDamage + lastHP - currentHP
-				end
-				if lastHP ~= currentHP then
-					damageTimestamps[healthIndex] = { timestamp = os.time(), damage = lastHP - currentHP }
-					healthIndex = healthIndex % 100 + 1 
-				end
-				if toHeal > 0 then
-					currentHP = currentHP + toHeal
-					PlayerController.Pawn.BP_HPHitable.CurrentHp = currentHP
-					toHeal = 0
-				end
-				lastHP = currentHP
-				recentDamage = MAX_HEALTH - currentHP
-			end
-			if GameInstance ~= nil then
-				for _,Box in pairs(hpBox) do
-					Box:ClearChildren()
+	if playerPawn.ref_entity ~= nil and playerPawn.ref_health ~= nil then
+		if playerPawn.ref_entity:IsValid() and playerPawn.ref_health:IsValid() then
+			currentArea = playerPawn.ref_entity:GetWorld():GetFName():ToString()
+			
+			local currentHP = playerPawn.ref_health.CurrentHp
+			if type(currentHP) == "number" then
+				local recentDamage = 0
+				if currentHP <= MAX_HEALTH / 1000 or doReset then
+					playerPawn.ref_health.CurrentHp = MAX_HEALTH
+					playerPawn.ref_health.maxHP = MAX_HEALTH * 2
+					lastHP = MAX_HEALTH
+					damageTimestamps = {}
+					doReset = false
+					print("Reset to Max HP")
+				else
+					if lastHP > currentHP then
+						totalDamage = totalDamage + lastHP - currentHP
+					end
+					if lastHP ~= currentHP then
+						damageTimestamps[healthIndex] = { timestamp = os.time(), damage = lastHP - currentHP }
+						healthIndex = healthIndex % 100 + 1
+					end
+					if toHeal > 0 then
+						currentHP = currentHP + toHeal
+						playerPawn.ref_health.CurrentHp = currentHP
+						toHeal = 0
+					end
+					lastHP = currentHP
+					recentDamage = MAX_HEALTH - currentHP
 				end
 				
-				currentArea = GameInstance.activeZoneStr[MAP_NAME]:ToString()
-				if currentArea == "Zone_Tower" then
-					menuVariant = 1
-				end
-				areaEnemies = {}
-				local enemyListByClass = {}
-				for _,class in ipairs(ENEMY_NAMES) do
-					enemyListByClass[class.name] = {}
-				end
-				local enemies = FindAllOf("BP_EnemyBase_C") or {}
-				local hazards = FindAllOf("BP_Hazemy_Base_C") or {}
-				for _,enemy in ipairs(enemies) do
-					local fullName = enemy:GetFullName()
-					local className = string.match(fullName,("%S+"))
-					if fullName ~= nil then
-						local class
-						for i=1,#ENEMY_NAMES do
-							if ENEMY_NAMES[i].class == className then
-								class = ENEMY_NAMES[i].name
-							end
-						end
-						if class ~= nil then
-							local name = enemy:GetFName():ToString()
-							local maxHP = enemy.BP_HpHitable.maxHP
-							if type(maxHP) == "number" then
-								if infiniteHP[name] == nil then infiniteHP[name] = false end
-								if infiniteHP[name] then
-									enemy.BP_HpHitable.currentHP = MAX_HEALTH
-								elseif enemy.BP_HpHitable.currentHP > maxHP then
-									enemy.BP_HpHitable.currentHP = maxHP
+				
+				local enemies_exist = false
+				if enemies[currentArea] ~= nil then
+					for class,enemiesInClass in pairs(enemies[currentArea]) do
+						for _,enemy in ipairs(enemiesInClass) do
+							if enemy ~= nil and type(enemy) == "table" then
+								if enemy.ref_entity:IsValid() and enemy.ref_health:IsValid() then
+									enemies_exist = true
+									goto skip
 								end
-								enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
 							end
 						end
 					end
 				end
-				for _,enemy in ipairs(hazards) do
-					local fullName = enemy:GetFullName()
-					local className = string.match(fullName,("%S+"))
-					if fullName ~= nil then
-						local class
-						for i=1,#ENEMY_NAMES do
-							if ENEMY_NAMES[i].class == className then
-								class = ENEMY_NAMES[i].name
-							end
-						end
-						if class ~= nil then
-							local name = enemy:GetFName():ToString()
-							local maxHP = enemy.BP_HpHitable.maxHP
-							if type(maxHP) == "number" then 
-								if infiniteHP[name] == nil then infiniteHP[name] = false end
-								if infiniteHP[name] then
-									enemy.BP_HpHitable.currentHP = MAX_HEALTH
-								elseif enemy.BP_HpHitable.currentHP > maxHP then
-									enemy.BP_HpHitable.currentHP = maxHP
-								end
-								enemyListByClass[class][#enemyListByClass[class] + 1] = {name = name, enemy = enemy, class = class, count = #enemyListByClass[class] + 1, maxHP = maxHP}
-							end
-						end
+				::skip::
+				if not enemies_exist then
+					if menuVariant ~= MENU.MINIATURE then menuVariant = MENU.NO_ENEMY end
+				else
+					if menuVariant == MENU.NO_ENEMY then
+						menuVariant = MENU.FOCUSED_ENEMIES
 					end
-				end
-				if PlayerController.Pawn.lockedOn == true then
-					lockonTarget = PlayerController.Pawn.LocketActorTarget:GetFName():ToString()
-				end
-				if focusedEnemies[currentArea] ~= nil then
-					for _,focus in ipairs(focusedEnemies[currentArea]) do
-						focus.index = nil
-					end
-				end
-				for _,class in ipairs(ENEMY_NAMES) do
-					for _,enemy in ipairs(enemyListByClass[class.name]) do
-						areaEnemies[#areaEnemies + 1] = enemy
-						if lockonTarget == areaEnemies[#areaEnemies].name then
-							enemyIndex = #areaEnemies
-						end
-						if focusedEnemies[currentArea] ~= nil then
-							for _,focus in ipairs(focusedEnemies[currentArea]) do
-								if enemy ~= nil then 
-									if focus.name == enemy.name then
-										focus.index = #areaEnemies
+					
+					--print("\nEnemies\n")
+					for class, enemiesInClass in pairs(enemies[currentArea]) do
+						for _,enemy in ipairs(enemiesInClass) do
+							if enemy ~= nil and type(enemy) == "table" then
+								if enemy.ref_entity:IsValid() and enemy.ref_health:IsValid() then
+									if infiniteHP[enemy.name] == nil then infiniteHP[enemy.name] = false end
+									if infiniteHP[enemy.name] then
+										enemy.ref_health.currentHP = MAX_HEALTH
+									elseif enemy.ref_health.currentHP > enemy.max_hp then
+										enemy.ref_health.currentHP = enemy.max_hp
 									end
 								end
 							end
 						end
 					end
-				end
-				if focusedEnemies[currentArea] == nil then
-					focusedEnemies[currentArea] = {}
-					for i=1,5 do
-						local tempEnemy = { name = nil, index = nil }
-						if areaEnemies[i] ~= nil then
-							tempEnemy = { name = areaEnemies[i].name, index = i}
+					--print("\nContiue\n")
+					if playerPawn.ref_entity.lockedOn == true then
+						local target = playerPawn.ref_entity.lockonComponent:GetFullName()
+						if target ~= nil then
+							lockonTarget = target:match("%.[%w_]+%."):sub(2, -2)
 						end
-						focusedEnemies[currentArea][i] = tempEnemy
+					end
+					if focusedEnemies[currentArea] ~= nil then
+						for _,focus in ipairs(focusedEnemies[currentArea]) do
+							focus.index = nil
+						end
+					end
+					for _, class in ipairs(ENEMY_CLASS_ORDERED) do
+						if enemies[currentArea][class] ~= nil then
+							for _,enemy in ipairs(enemies[currentArea][class]) do
+								if enemy ~= nil and type(enemy) == "table" then
+									areaEnemies[#areaEnemies + 1] = {name = enemy.name, enemy = enemy}
+									if lockonTarget == enemy.name then
+										enemyIndex = #areaEnemies
+									end
+									if focusedEnemies[currentArea] ~= nil then
+										for _,focus in ipairs(focusedEnemies[currentArea]) do
+											if focus.name == enemy.name then
+												focus.index = #areaEnemies
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+					if focusedEnemies[currentArea] == nil then
+						focusedEnemies[currentArea] = {}
+						for i=1,5 do
+							local tempEnemy = { name = nil, index = nil }
+							if areaEnemies[i] ~= nil then
+								tempEnemy = { name = areaEnemies[i].name, index = i}
+							end
+							focusedEnemies[currentArea][i] = tempEnemy
+						end
 					end
 				end
 				--UserWidget
@@ -308,19 +368,18 @@ LoopAsync(100, function()
 				----Border
 				-----BorderSlot
 				------TextBlock
-				
 				if playerHealthWidget == nil then
 				---@type UUserWidget
 					playerHealthWidget = FindFirstOf("PseudoregaliaHealth_Player_Display")
 				end
 				if not playerHealthWidget:IsValid() then
-					playerHealthWidget = StaticConstructObject(StaticFindObject("/Script/UMG.UserWidget"), GameInstance, FName("PseudoregaliaHealth_Player_Display"))
+					playerHealthWidget = StaticConstructObject(StaticFindObject("/Script/UMG.UserWidget"), playerPawn.ref_entity, FName("PseudoregaliaHealth_Player_Display"))
 					if not playerHealthWidget:IsValid() then
 						print("Error creating Player Health Display...\n")
 						return
 					end
 				end
-				if playerHealthWidget.WidgetTree == nil or not playerHealthWidget.WidgetTree:IsValid() then	
+				if playerHealthWidget.WidgetTree == nil or not playerHealthWidget.WidgetTree:IsValid() then
 					playerHealthWidget.WidgetTree = StaticConstructObject(StaticFindObject("/Script/UMG.WidgetTree"), playerHealthWidget, FName("PseudoregaliaHealth_Player_Tree"))
 					if not playerHealthWidget.WidgetTree:IsValid() then
 						print("Error creating Player Health Display Tree...\n")
@@ -348,13 +407,12 @@ LoopAsync(100, function()
 						return
 					end
 				end
-				
 				if enemyHealthWidget == nil then
 				---@type UUserWidget
 					enemyHealthWidget = FindFirstOf("PseudoregaliaHealth_Player_Display")
 				end
 				if not enemyHealthWidget:IsValid() then
-					enemyHealthWidget = StaticConstructObject(StaticFindObject("/Script/UMG.UserWidget"), GameInstance, FName("PseudoregaliaHealth_Enemy_Display"))
+					enemyHealthWidget = StaticConstructObject(StaticFindObject("/Script/UMG.UserWidget"), playerPawn.ref_entity, FName("PseudoregaliaHealth_Enemy_Display"))
 					if not enemyHealthWidget:IsValid() then
 						print("Error creating Enemy Health Display...\n")
 						return
@@ -388,40 +446,39 @@ LoopAsync(100, function()
 						return
 					end
 				end
-				
 				local playerText = "Total Damage: " .. totalDamage /10 .. "\nRecent Damage: " .. recentDamage /10
 				
 				
 				local enemyText = ""
-				if menuVariant == 1 then
-					if currentArea == "Zone_Tower" then
-						enemyText = "\n\n        No Enemies in Area\n\n\n =========================================\n"
-					else
-						for i=1,5 do
-							local line = "  "
-							if i == menuIndex then line = ">" end
-							if focusedEnemies[currentArea][i] ~= nil then
-								if areaEnemies[focusedEnemies[currentArea][i].index] ~= nil then
-									local enemy = areaEnemies[focusedEnemies[currentArea][i].index]
-									local name = enemy.class .. " - " .. enemy.count
-									local maxHP = enemy.maxHP
-									local currentHP = 0
-									local attack = "None"
-									if enemy.enemy:IsValid() then
-										currentHP = enemy.enemy.BP_HpHitable.CurrentHp
-										attack = enemy.enemy.activeAttackID
+				if menuVariant == MENU.NO_ENEMY then
+					enemyText = "\n\n        No Enemies in Area\n\n\n =========================================\nPress Enter to Hide"
+				elseif menuVariant == MENU.FOCUSED_ENEMIES then
+					for i=1,5 do
+						local line = "  "
+						if i == menuIndex then line = ">" end
+						if focusedEnemies[currentArea][i] ~= nil then
+							if areaEnemies[focusedEnemies[currentArea][i].index] ~= nil then
+								local enemy = areaEnemies[focusedEnemies[currentArea][i].index].enemy
+								local name = enemy.display_name
+								local maxHP = enemy.max_hp
+								local currentHealth = 0
+								local attack = "None"
+								if enemy ~= nil then
+									if enemy.ref_entity and enemy.ref_health:IsValid() then
+										currentHealth = enemy.ref_health.CurrentHp
+										attack = enemy.ref_entity.activeAttackID
 									end
-									if infiniteHP[focusedEnemies[currentArea][i].name] then
-										currentHP = "∞"
-									end
-									
-									line = line .. name .. ", HP = " .. currentHP .. "/" .. maxHP .. ", Attack = " .. attack
 								end
+								if infiniteHP[focusedEnemies[currentArea][i].name] then
+									currentHealth = "∞"
+								end
+								
+								line = line .. name .. ", HP = " .. currentHealth .. "/" .. maxHP .. ", Attack = " .. attack
 							end
-							enemyText = enemyText .. line .."\n"
 						end
-						enemyText = enemyText .. " =========================================\n"
+						enemyText = enemyText .. line .."\n"
 					end
+					enemyText = enemyText .. " =========================================\n"
 					optionInfinite = "[  ]"
 					if focusedEnemies[currentArea][menuIndex].name ~= nil then
 						if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then optionInfinite = "[x]" end
@@ -432,7 +489,7 @@ LoopAsync(100, function()
 					enemyText = enemyText .. isOption(menuOption == 4, ">","  ") .. "Save "
 					enemyText = enemyText .. isOption(menuOption == 5, ">","  ") .. "Load | "
 					enemyText = enemyText .. isOption(menuOption == 6, ">","  ") .. "Hide }"
-				elseif menuVariant == 2 then
+				elseif menuVariant == MENU.ENEMY_LIST then
 					enemyIndex = (enemyIndex + #areaEnemies - 1) % #areaEnemies + 1
 					local min = enemyIndex - 2
 					if min < 1 then min = 1 end
@@ -447,8 +504,8 @@ LoopAsync(100, function()
 						tableIndex = tableIndex + 1
 						if tableIndex >= min then
 							local line = "  "
-							if tableIndex == enemyIndex then line = ">" end 
-							enemyText = enemyText .. line .. enemy.class .. " - " .. enemy.count .. "\n"
+							if tableIndex == enemyIndex then line = ">" end
+							enemyText = enemyText .. line .. enemy.enemy.display_name .. "\n"
 							lineIndex = lineIndex + 1
 							if lineIndex > 5 then break end
 						end
@@ -458,30 +515,33 @@ LoopAsync(100, function()
 						enemyText = enemyText .. "\n"
 					end
 					enemyText = enemyText .. " =========================================\nEnter > Confirm | Backspace > Cancel | Lockon > Select"
-				elseif menuVariant == 3 then
+				elseif menuVariant == MENU.MINIATURE then
 					enemyText = "No Enemy Selected | Enter to open Menu"
-					if focusedEnemies[currentArea][menuIndex].index ~= nil then
-						if areaEnemies[focusedEnemies[currentArea][menuIndex].index] ~= nil then
-							local enemy = areaEnemies[focusedEnemies[currentArea][menuIndex].index]
-							local name = enemy.class .. " - " .. enemy.count
-							local maxHP = enemy.maxHP
-							local currentHP = 0
-							local attack = "None"
-							if enemy.enemy:IsValid() then
-								currentHP = enemy.enemy.BP_HpHitable.CurrentHp
-								attack = enemy.enemy.activeAttackID
+					if focusedEnemies[currentArea] ~= nil then
+						if focusedEnemies[currentArea][menuIndex].index ~= nil then
+							if areaEnemies[focusedEnemies[currentArea][menuIndex].index] ~= nil then
+								local enemy = areaEnemies[focusedEnemies[currentArea][menuIndex].index].enemy
+								local name = enemy.display_name
+								local maxHP = enemy.max_hp
+								local currentHealth = 0
+								local attack = "None"
+								if enemy ~= nil then
+									if enemy.ref_entity and enemy.ref_health:IsValid() then
+										currentHealth = enemy.ref_health.CurrentHp
+										attack = enemy.ref_entity.activeAttackID
+									end
+								end
+								if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then
+									currentHealth = "∞"
+								end
+								
+								enemyText = name .. ", HP = " .. currentHealth .. "/" .. maxHP .. ", Attack = " .. attack .. "   | Enter to open Menu"
 							end
-							if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then
-								currentHP = "∞"
-							end
-							
-							enemyText = name .. ", HP = " .. currentHP .. "/" .. maxHP .. ", Attack = " .. attack
 						end
 					end
 				else
-					enemyText = enemyText .. "\n\n\n\n\n =========================================\nEnter > Confirm | Backspace > Cancel | Lockon > Jump"
+					enemyText = enemyText .. "\n\n\n\n\n =========================================\n{ >[  ]∞HP |   Enemy List... |   [Total]  Save   Load |   Hide }"
 				end
-				
 				playerHealthWidget.WidgetTree.RootWidget.Slots[1].Content:SetText(FText(playerText))
 				playerHealthWidget.WidgetTree.RootWidget.Background.TintColor.SpecifiedColor = {R=0,G=0,B=0,A=0.4}
 				playerHealthWidget:SetPositionInViewport(Utils.FVector2D(350, 10), false)
@@ -491,7 +551,7 @@ LoopAsync(100, function()
 				enemyHealthWidget.WidgetTree.RootWidget.Slots[1].Content.Font.Size = 15
 				enemyHealthWidget.WidgetTree.RootWidget.Background.TintColor.SpecifiedColor = {R=0,G=0,B=0,A=0.4}
 				local enemyMenuPlacement = Utils.FVector2D(1405, 900)
-				if menuVariant == 3 then
+				if menuVariant == 3 or menuVariant == -2 then
 					enemyMenuPlacement = Utils.FVector2D(1405, 1050)
 				end
 				enemyHealthWidget:SetPositionInViewport(enemyMenuPlacement, false)
@@ -501,11 +561,10 @@ LoopAsync(100, function()
 	end
 end)
 
-
-Utils.RegisterKey("Reset Total", function() doReset = true; totalDamage = 0.0 end, hotKey, modifierKeys)
-Utils.RegisterKey("Menu Up", function() menuUp() end, Key.UP_ARROW,{})
-Utils.RegisterKey("Menu Down", function() menuDown() end, Key.DOWN_ARROW,{})
-Utils.RegisterKey("Menu Left", function() menuLeft() end, Key.LEFT_ARROW,{})
-Utils.RegisterKey("Menu Right", function() menuRight() end, Key.RIGHT_ARROW,{})
-Utils.RegisterKey("Menu Back", function() menuBack() end, Key.BACKSPACE,{})
-Utils.RegisterKey("Menu Enter", function() menuEnter() end, Key.RETURN,{})
+RegisterKeyBindAsync(hotKey, modifierKeys, function() doReset = true; totalDamage = 0.0 end)
+RegisterKeyBindAsync(Key.UP_ARROW,{}, function() menuUp() end)
+RegisterKeyBindAsync(Key.DOWN_ARROW,{}, function() menuDown() end)
+RegisterKeyBindAsync(Key.LEFT_ARROW,{}, function() menuLeft() end)
+RegisterKeyBindAsync(Key.RIGHT_ARROW,{}, function() menuRight() end)
+RegisterKeyBindAsync(Key.BACKSPACE,{}, function() menuBack() end)
+RegisterKeyBindAsync(Key.RETURN,{}, function() menuEnter() end)
