@@ -2,14 +2,13 @@
 --Config
 --- Reset Total Health Hotkey:
 local hotKey = Key.F2
-local modifierKeys = {} -- Valid: { SHIFT, CONTROL, ALT }, comma seperated
+local modifierKeys = {} -- Valid: { SHIFT, CONTROL, ALT }, comma separated
 
 --Namespaces
 local Utils = require("Utils")
 
 --Constants
 local MAX_HEALTH = 1000000000.0
-local MAP_NAME = "mapName_4_423D13C74469858B6E9893BEB6ABFBBB"
 local ENEMY_CLASS  = "/Game/Blueprints/Enemies/BP_EnemyBase.BP_EnemyBase_C"
 local HAZEMY_CLASS = "/Game/Blueprints/Enemies/NoAI_Enemies/BP_Hazemy_Base.BP_Hazemy_Base_C"
 local PLAYERPAWN_CLASS = "/Game/ThirdPerson/Player/BP_PlayerGoatMain.BP_PlayerGoatMain_C"
@@ -35,9 +34,6 @@ local ENEMY_CLASS_ORDERED = {
 	"BP_Enemy_Horn_C",
 	"BP_hazemy_WheelCrawler_C"
 }
-for key,_ in pairs(ENEMY_NAMES) do
-	print(key)
-end
 local MENU = {
 	ERROR = -1,
 	NO_ENEMY = 0,
@@ -93,9 +89,9 @@ function addEntity(refHealth)
 			max_hp = refHealth.maxHP,
 			current_hp = 0,
 			attack_id = 0,
-			display_name = (ENEMY_NAMES[class] or "ERRROROEOORASDOFNMSAD") .. " " .. #enemies[currentArea][class]
+			display_name = (ENEMY_NAMES[class] or "ERROR-ERROR-ERROR") .. " " .. #enemies[currentArea][class]
 		}
-		print(class .. " : " .. enemies[currentArea][class][#enemies[currentArea][class]].display_name)
+		--print(class .. " : " .. enemies[currentArea][class][#enemies[currentArea][class]].display_name)
 		return
 	elseif refEntity:IsA(PLAYERPAWN_CLASS) then
 		playerPawn = {
@@ -237,11 +233,11 @@ function SaveEnemyTargetsToFile(full)
 	File:close()
 end
 
--- Pre-load Save File
+-- Preload Save File
 LoadEnemyTargetsFromFile()
 
 --local LoopHandle = LoopInGameThreadAfterFrames(10, function()
-local LoopHandle = LoopInGameThreadWithDelay(100, function()
+local _ = LoopInGameThreadWithDelay(100, function()
 --LoopAsync(100, function()
 	for i = 1, 100 do
 		if damageTimestamps[i] ~= nil and os.difftime(os.time(), damageTimestamps[i].timestamp) > 10 then
@@ -321,7 +317,6 @@ local LoopHandle = LoopInGameThreadWithDelay(100, function()
 							end
 						end
 					end
-					--print("\nContiue\n")
 					if playerPawn.ref_entity.lockedOn == true then
 						local target = playerPawn.ref_entity.lockonComponent:GetFullName()
 						if target ~= nil then
@@ -479,7 +474,7 @@ local LoopHandle = LoopInGameThreadWithDelay(100, function()
 						enemyText = enemyText .. line .."\n"
 					end
 					enemyText = enemyText .. " =========================================\n"
-					optionInfinite = "[  ]"
+					local optionInfinite = "[  ]"
 					if focusedEnemies[currentArea][menuIndex].name ~= nil then
 						if infiniteHP[focusedEnemies[currentArea][menuIndex].name] then optionInfinite = "[x]" end
 					end
